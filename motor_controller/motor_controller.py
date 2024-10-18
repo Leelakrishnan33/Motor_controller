@@ -2,88 +2,58 @@ import rclpy
 from rclpy.node import Node
 from geometry_msgs.msg import Twist
 import serial
-import time
 
 class MotorController(Node):
-    def _init_(self):
-        super()._init_('motor_controller')
-        self.subscription = self.create_subscription(
-            Twist,
-            'cmd_vel',  # Default topic for teleop
-            self.cmd_callback,
-            10
-        )
+    def __init__(self):
+        super().__init__('motor_controller')
+        self.subscriber_ = self.create_subscription(Twist, 'cmd_vel', self.cmd_vel_callback, 10)
+        self.serial_port = serial.Serial('/dev/ttyUSB0', 9600)  # Adjust as necessary
 
-        self.serial_port = None  # Initialize the serial port variable
-        self.initialize_serial()  # Attempt to initialize the serial port
+    def cmd_vel_callback(self, msg):
+        # Process the incoming Twist message
+        linear_x = msg.linear.x
+        angular_z = msg.angular.z
 
-        # Stop motors initially
-        self.stop_motors()
+        if linear_x > 0:  # Moving forward
+            self.send_command('i')  # Forward (i)
+        elif linear_x < 0:  # Moving backward
+            self.send_command(',')  # Backward (m)
+        elif angular_z > 0:  # Turning right
+            if linear_x > 0:  # Forward with right turn
+                self.send_command('o')  # Forward right turn (o)
+            elif linear_x < 0:  # Backward with right turn
+                self.send_command('.')  # Backward right turn (.)
+            else:
+                self.send_command('l')  # Right turn (l)
+        elif angular_z < 0:  # Turning left
+            if linear_x > 0:  # Forward with left turn
+                self.send_command('u')  # Forward left turn (u)
+            elif linear_x < 0:  # Backward with left turn
+                self.send_command('m')  # Backward left turn (j)
+            else:
+                self.send_command('j')  # Left turn (s)
+        else:  # No movement
+            self.send_command('s')  # Stop (s)
 
-    def initialize_serial(self):
-        try:
-            self.serial_port = serial.Serial('/dev/ttyUSB0', 9600, timeout=1)  # Adjust as needed
-            time.sleep(2)  # Wait for the connection to establish
-        except serial.SerialException as e:
-            self.get_logger().error(f'Serial port error: {e}')
-            self.serial_port = None  # Ensure serial_port is None on error
+    def send_command(self, command):
+        self.serial_port.write(command.encode())
+        self.get_logger().info(f'Sent command: {command}')
 
-    def cmd_callback(self, msg):
-        if self.serial_port is not None:  # Check if serial port is open
-            if msg.linear.x > 0:  # Move forward
-                self.move_forward()
-            elif msg.linear.x < 0:  # Move backward
-                self.move_backward()
-            elif msg.linear.y > 0:  # Move right
-                self.move_right()
-            elif msg.linear.y < 0:  # Move left
-                self.move_left()
-            elif msg.angular.z > 0:  # Turn right
-                self.turn_right()
-            elif msg.angular.z < 0:  # Turn left
-                self.turn_left()
-            elif msg.angular.z == 0 and msg.linear.x == 0 and msg.linear.y == 0:  # Stop motors
-                self.stop_motors()
-
-    def move_forward(self):
-        self.get_logger().info('Moving forward')
-        self.serial_port.write(b'w')
-
-    def move_backward(self):
-        self.get_logger().info('Moving backward')
-        self.serial_port.write(b's')
-
-    def move_left(self):
-        self.get_logger().info('Moving left')
-        self.serial_port.write(b'a')  # Send command for lateral left movement
-
-    def move_right(self):
-        self.get_logger().info('Moving right')
-        self.serial_port.write(b'd')  # Send command for lateral right movement
-
-    def turn_left(self):
-        self.get_logger().info('Turning left')
-        self.serial_port.write(b'l')  # Send command for turning left
-
-    def turn_right(self):
-        self.get_logger().info('Turning right')
-        self.serial_port.write(b'r')  # Send command for turning right
-
-    def stop_motors(self):
-        self.get_logger().info('Stopping motors')
-        if self.serial_port is not None:  # Check before writing
-            self.serial_port.write(b'x')
-
-    def _del_(self):
-        if self.serial_port is not None:  # Check if it was initialized
-            self.serial_port.close()  # Close the serial port
+    def close_serial(self):
+        self.serial_port.close()
 
 def main(args=None):
     rclpy.init(args=args)
     motor_controller = MotorController()
-    rclpy.spin(motor_controller)
-    motor_controller.destroy_node()
-    rclpy.shutdown()
 
-if _name_ == '_main_':
+    try:
+        rclpy.spin(motor_controller)
+    except KeyboardInterrupt:
+        motor_controller.get_logger().info('Keyboard interrupt detected. Shutting down...')
+    finally:
+        motor_controller.close_serial()
+        motor_controller.destroy_node()
+        rclpy.shutdown()
+
+if __name__ == '__main__':
     main()
