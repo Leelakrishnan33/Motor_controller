@@ -5,8 +5,8 @@ import serial
 import time
 
 class MotorController(Node):
-    def __init__(self):
-        super().__init__('motor_controller')
+    def _init_(self):
+        super()._init_('motor_controller')
         self.subscription = self.create_subscription(
             Twist,
             'cmd_vel',  # Default topic for teleop
@@ -34,11 +34,15 @@ class MotorController(Node):
                 self.move_forward()
             elif msg.linear.x < 0:  # Move backward
                 self.move_backward()
-            elif msg.angular.z > 0:  # Move right
+            elif msg.linear.y > 0:  # Move right
                 self.move_right()
-            elif msg.angular.z < 0:  # Move left
+            elif msg.linear.y < 0:  # Move left
                 self.move_left()
-            else:  # Stop motors
+            elif msg.angular.z > 0:  # Turn right
+                self.turn_right()
+            elif msg.angular.z < 0:  # Turn left
+                self.turn_left()
+            elif msg.angular.z == 0 and msg.linear.x == 0 and msg.linear.y == 0:  # Stop motors
                 self.stop_motors()
 
     def move_forward(self):
@@ -51,18 +55,26 @@ class MotorController(Node):
 
     def move_left(self):
         self.get_logger().info('Moving left')
-        self.serial_port.write(b'a')
+        self.serial_port.write(b'a')  # Send command for lateral left movement
 
     def move_right(self):
         self.get_logger().info('Moving right')
-        self.serial_port.write(b'd')
+        self.serial_port.write(b'd')  # Send command for lateral right movement
+
+    def turn_left(self):
+        self.get_logger().info('Turning left')
+        self.serial_port.write(b'l')  # Send command for turning left
+
+    def turn_right(self):
+        self.get_logger().info('Turning right')
+        self.serial_port.write(b'r')  # Send command for turning right
 
     def stop_motors(self):
         self.get_logger().info('Stopping motors')
         if self.serial_port is not None:  # Check before writing
             self.serial_port.write(b'x')
 
-    def __del__(self):
+    def _del_(self):
         if self.serial_port is not None:  # Check if it was initialized
             self.serial_port.close()  # Close the serial port
 
@@ -73,5 +85,5 @@ def main(args=None):
     motor_controller.destroy_node()
     rclpy.shutdown()
 
-if __name__ == '__main__':
+if _name_ == '_main_':
     main()
